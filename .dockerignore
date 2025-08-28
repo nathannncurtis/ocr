@@ -1,0 +1,6 @@
+.claude/
+*.tmp
+*.log
+__pycache__/
+*.pyc
+.git/
