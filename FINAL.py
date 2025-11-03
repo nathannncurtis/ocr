@@ -35,12 +35,16 @@ def get_size_mb(path):
 def combine_files_to_pdf(input_folder, output_pdf):
     # combine all the tiffs/jpegs/pdfs into one pdf
     input_path = Path(input_folder)
-    
+
+    # Ignore system files
+    ignore_files = {'thumbs.db', 'desktop.ini', '.ds_store'}
+
     # find images and pdfs
-    imgs = sorted(list(input_path.glob("*.tif")) + list(input_path.glob("*.tiff")) + 
+    imgs = sorted([f for f in (list(input_path.glob("*.tif")) + list(input_path.glob("*.tiff")) +
                  list(input_path.glob("*.jpg")) + list(input_path.glob("*.jpeg")))
-    
-    pdfs = sorted(list(input_path.glob("*.pdf")))
+                 if f.name.lower() not in ignore_files])
+
+    pdfs = sorted([f for f in list(input_path.glob("*.pdf")) if f.name.lower() not in ignore_files])
     
     if not imgs and not pdfs:
         log("ERROR: No files found")
@@ -71,43 +75,105 @@ def combine_files_to_pdf(input_folder, output_pdf):
         elif not pdfs:
             # just images - convert with img2pdf
             file_paths = [str(f) for f in imgs]
-            with open(output_pdf, 'wb') as f:
-                f.write(img2pdf.convert(file_paths))
-            size_mb = get_size_mb(output_pdf)
-            log(f"Combined {len(imgs)} images: {size_mb:.2f} MB")
-            return True
+            try:
+                with open(output_pdf, 'wb') as f:
+                    f.write(img2pdf.convert(file_paths))
+                size_mb = get_size_mb(output_pdf)
+                log(f"Combined {len(imgs)} images: {size_mb:.2f} MB")
+                return True
+            except Exception as img_err:
+                # img2pdf failed, try converting files one at a time
+                log(f"img2pdf batch failed ({img_err}), trying one-by-one conversion...")
+                import fitz
+
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_path = Path(temp_dir)
+                    temp_pdfs = []
+
+                    # Convert each image individually
+                    for i, img_path in enumerate(imgs):
+                        try:
+                            temp_pdf = temp_path / f"page_{i:04d}.pdf"
+                            # Try img2pdf on single file
+                            try:
+                                with open(temp_pdf, 'wb') as f:
+                                    f.write(img2pdf.convert([str(img_path)]))
+                                temp_pdfs.append(temp_pdf)
+                            except Exception as single_err:
+                                log(f"WARNING: Could not convert {img_path.name}: {single_err}")
+                                continue
+                        except Exception as e:
+                            log(f"WARNING: Skipping {img_path.name}: {e}")
+                            continue
+
+                    if not temp_pdfs:
+                        log(f"ERROR: No images could be converted")
+                        return False
+
+                    # Merge all PDFs
+                    result_doc = fitz.open()
+                    for pdf_path in temp_pdfs:
+                        doc = fitz.open(pdf_path)
+                        result_doc.insert_pdf(doc)
+                        doc.close()
+
+                    result_doc.save(output_pdf)
+                    result_doc.close()
+
+                    size_mb = get_size_mb(output_pdf)
+                    log(f"Combined {len(temp_pdfs)} images: {size_mb:.2f} MB")
+                    return True
         else:
             # mixed content - convert images first then merge everything
             import fitz
+
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir)
-                
-                temp_img_pdf = None
-                if imgs:
-                    temp_img_pdf = temp_path / "images.pdf"
-                    file_paths = [str(f) for f in imgs]
-                    with open(temp_img_pdf, 'wb') as f:
-                        f.write(img2pdf.convert(file_paths))
-                
-                # merge everything
+                all_pdfs = []
+
+                # Convert images one by one
+                for i, img_path in enumerate(imgs):
+                    try:
+                        temp_pdf = temp_path / f"img_{i:04d}.pdf"
+                        try:
+                            with open(temp_pdf, 'wb') as f:
+                                f.write(img2pdf.convert([str(img_path)]))
+                            all_pdfs.append(temp_pdf)
+                        except Exception as single_err:
+                            log(f"WARNING: Could not convert {img_path.name}: {single_err}")
+                            continue
+                    except Exception as e:
+                        log(f"WARNING: Skipping {img_path.name}: {e}")
+                        continue
+
+                # Add original PDFs to list
+                all_pdfs.extend(pdfs)
+
+                if not all_pdfs:
+                    log(f"ERROR: No files could be converted")
+                    return False
+
+                # Merge all PDFs
                 result_doc = fitz.open()
-                
-                if temp_img_pdf:
-                    doc = fitz.open(temp_img_pdf)
-                    result_doc.insert_pdf(doc)
-                    doc.close()
-                
-                for pdf in pdfs:
-                    doc = fitz.open(pdf)
-                    result_doc.insert_pdf(doc)
-                    doc.close()
-                
+                for pdf_path in all_pdfs:
+                    try:
+                        doc = fitz.open(pdf_path)
+                        result_doc.insert_pdf(doc)
+                        doc.close()
+                    except Exception as e:
+                        log(f"WARNING: Skipping {pdf_path.name if hasattr(pdf_path, 'name') else pdf_path}: {e}")
+                        continue
+
+                if result_doc.page_count == 0:
+                    log(f"ERROR: No files could be converted")
+                    result_doc.close()
+                    return False
+
                 result_doc.save(output_pdf)
                 result_doc.close()
-                
+
                 size_mb = get_size_mb(output_pdf)
-                total = len(imgs) + len(pdfs)
-                log(f"Combined {total} files: {size_mb:.2f} MB")
+                log(f"Combined {result_doc.page_count} pages from {len(imgs)} images and {len(pdfs)} PDFs: {size_mb:.2f} MB")
                 return True
         
     except Exception as e:
@@ -213,28 +279,21 @@ Examples:
     ocr_mode_desc = "accurate OCR (slower, larger)" if args.accurate_ocr else "fast OCR (smaller, faster)"
     log("=== FINAL WORKFLOW ===")
     log("1. Combine TIFF/JPEG/PDF files -> Single PDF")
-    log(f"2. OCRmyPDF: Add text layer with deskewing & rotation ({ocr_mode_desc})")
-    log("3. JBIG2 optimization (preserves OCR)")
+    log(f"2. OCRmyPDF: Add text layer with deskewing, rotation & JBIG2 compression ({ocr_mode_desc})")
     log("")
     
     # Create temporary directory for intermediate files
     with tempfile.TemporaryDirectory(prefix="final_workflow_") as temp_dir:
         temp_path = Path(temp_dir)
-        
+
         # Step 1: Combine images to PDF
         base_pdf = temp_path / "01_combined.pdf"
         if not combine_files_to_pdf(input_folder, base_pdf):
             return 1
-        
-        # Step 2: Run OCRmyPDF first (on uncompressed images for better preservation)
-        ocr_pdf = temp_path / "02_ocr.pdf"
+
+        # Step 2: Run OCRmyPDF with JBIG2 compression (single pass)
         fast_mode = not args.accurate_ocr  # Use fast mode unless --accurate-ocr specified
-        # Pass args to OCR function to access job count
-        if not run_ocr(base_pdf, ocr_pdf, fast_mode=fast_mode, args=args):
-            return 1
-        
-        # Step 3: Extract OCR, do JBIG2 rebuild, then re-inject OCR
-        if not extract_compress_reinject_ocr(ocr_pdf, output_pdf, temp_path):
+        if not run_ocr(base_pdf, output_pdf, fast_mode=fast_mode, args=args):
             return 1
     
     # Final summary
@@ -248,7 +307,7 @@ Examples:
     log("The PDF now includes:")
     log(f"  * OCR text layer (searchable, {ocr_quality} mode)")
     log("  * Deskewed and rotated pages")
-    log("  * In-place optimization (preserves OCR)")
+    log("  * JBIG2 compression for smaller file size")
     
     return 0
 

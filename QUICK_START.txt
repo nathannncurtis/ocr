@@ -1,0 +1,54 @@
+================================================================================
+QUICK START - Docker on Windows
+================================================================================
+
+FILES TO COPY:
+Copy the entire OCRmyPDF folder to your Windows machine.
+
+INSTALL DOCKER:
+1. Download Docker Desktop: https://www.docker.com/products/docker-desktop/
+2. Install and restart computer
+3. Start Docker Desktop (wait until running)
+
+BUILD CONTAINER (one time):
+Open PowerShell, navigate to OCRmyPDF folder:
+  cd C:\path\to\OCRmyPDF
+  docker build -t ocr-batch-processor .
+
+TEST RUN (see what will be processed):
+  docker run -v "C:\input:/input" -v "C:\output:/output" ocr-batch-processor python batch_process.py /input /output --dry-run
+
+FULL RUN (48 cores = 4 folders × 12 cores):
+  docker run -v "C:\input:/input" -v "C:\output:/output" ocr-batch-processor python batch_process.py /input /output -p 4 -j 12
+
+Replace C:\input and C:\output with your actual folder paths!
+
+================================================================================
+EXAMPLE:
+
+Input folder structure:
+  D:\Scans\ToProcess\
+    ├── 630666-01\  (contains .tif files)
+    ├── 629157-02\  (contains .jpg files)
+    └── 633421-03\  (contains .pdf files)
+
+Command:
+  docker run -v "D:\Scans\ToProcess:/input" -v "D:\Scans\Processed:/output" ocr-batch-processor python batch_process.py /input /output -p 4 -j 12
+
+Output:
+  D:\Scans\Processed\
+    ├── 630666-01.pdf  (searchable, compressed)
+    ├── 629157-02.pdf  (searchable, compressed)
+    └── 633421-03.pdf  (searchable, compressed)
+
+================================================================================
+
+When it finishes, you'll see:
+  PROCESSING COMPLETE
+  Success: X
+  Failed: 0
+
+Then it stops automatically.
+
+For detailed instructions, see: DOCKER_WINDOWS_SETUP.md
+================================================================================

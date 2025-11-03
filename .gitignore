@@ -1,0 +1,51 @@
+# Claude AI
+/.claude
+
+# Test/example folders
+/630666-01
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Output/test directories
+test/
+testou/
+output/
+input/
+*_output/
+*_input/
+
+# Error logs from batch processing
+*_error.log
+
+# Temporary files
+*.tmp
+*.log
+.tmp/
+temp/
+_jbig2work_*/

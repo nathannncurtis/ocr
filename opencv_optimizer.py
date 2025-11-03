@@ -181,7 +181,8 @@ def _render_1bit_pngs(pdf_path, work, dpi):
         pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
         im = Image.frombytes("RGB", (pix.width, pix.height), pix.samples).convert("1")
         outp = work / f"page_{i:04d}.png"
-        im.save(outp.as_posix(), "PNG", optimize=True)
+        # Save with DPI metadata to preserve page size
+        im.save(outp.as_posix(), "PNG", optimize=True, dpi=(dpi, dpi))
         pages.append(outp)
     doc.close()
     return pages
@@ -308,9 +309,9 @@ def rebuild_jbig2(inp, outp, dpi=None):
         if r.returncode != 0:
             raise RuntimeError("jbig2 output files not found")
         
-        # generate PDF
+        # generate PDF with DPI parameter
         python_cmd = "python3" if shutil.which("python3") else "python"
-        r = _run_cmd(f"{python_cmd} {temp_topdf} {temp_out_base} > {temp_out_pdf}")
+        r = _run_cmd(f"{python_cmd} {temp_topdf} --dpi {dpi} {temp_out_base} > {temp_out_pdf}")
         if r.returncode != 0:
             stderr = r.stderr.decode(errors='ignore') if r.stderr else 'No stderr'
             raise RuntimeError(f"PDF generation failed: {stderr}")

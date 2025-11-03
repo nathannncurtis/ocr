@@ -30,5 +30,5 @@ ENV DOCKER_CONTAINER=1
 # Create input/output directories
 RUN mkdir -p /input /output
 
-# Default command
-CMD ["python", "FINAL.py", "--help"]
+# Default command - show batch processing help
+CMD ["python", "batch_process.py", "--help"]
